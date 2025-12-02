@@ -1,12 +1,16 @@
 # frozen_string_literal: true
 
+require "async"
+
 # Forwards requests to AWS Secrets Manager API with caching support.
 #
 # This service handles BatchGetSecretValue requests by:
 # 1. Checking the in-memory cache for requested secrets
 # 2. Fetching uncached secrets from AWS Secrets Manager
-# 3. Splitting large requests into parallel batches if needed
+# 3. Splitting large requests into concurrent fiber-based batches if needed
 # 4. Storing fetched secrets in the cache
+#
+# Uses Async for fiber-based concurrency to integrate properly with Falcon.
 #
 # @example
 #   forwarder = AwsSecretsManagerForwarder.new
@@ -180,17 +184,20 @@ class AwsSecretsManagerForwarder
     }
   end
 
-  # Fetches multiple batches in parallel using threads.
+  # Fetches multiple batches concurrently using Async fibers.
+  #
+  # Uses Async to run batches concurrently within fibers, which integrates
+  # properly with Falcon's fiber-based architecture.
   #
   # @param batches [Array<Array<String>>] array of secret ID batches
   # @param version_stage [String] the version stage
   # @return [Hash] combined result with :secret_values and :errors
   def fetch_batches_parallel(batches, version_stage)
-    threads = batches.map do |batch|
-      Thread.new { fetch_batch(batch, version_stage) }
+    results = Sync do
+      batches.map do |batch|
+        Async { fetch_batch(batch, version_stage) }
+      end.map(&:wait)
     end
-
-    results = threads.map(&:value)
 
     # Combine all results
     {
