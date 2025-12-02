@@ -12,9 +12,32 @@ Torchwood is a mock AWS Secrets Manager API server built with Rails. It implemen
 
 - Ruby 3.4.7
 - Rails 8.1 (API-only mode)
-- Falcon web server (not Puma)
+- Falcon web server (fiber-based, not Puma)
 - No database (in-memory storage only)
 - Minitest for testing
+
+### Fiber-Based Concurrency
+
+**Important**: This application uses Falcon, which is fiber-based (not thread-based like Puma). When writing concurrent code:
+
+- **DO** use `Async` / `Sync` from the `async` gem for concurrent operations
+- **DO NOT** use `Thread.new` for parallelism - it doesn't integrate well with Falcon's fiber scheduler
+- Fibers are cooperative, so CPU-bound work will block other fibers
+- I/O operations (HTTP requests, etc.) yield automatically when using async-compatible libraries
+
+```ruby
+# Good - fiber-based concurrency
+require "async"
+
+Sync do
+  tasks = items.map { |item| Async { fetch(item) } }
+  results = tasks.map(&:wait)
+end
+
+# Bad - thread-based (avoid)
+threads = items.map { |item| Thread.new { fetch(item) } }
+results = threads.map(&:value)
+```
 
 ## Common Commands
 
@@ -43,8 +66,18 @@ The API follows AWS Secrets Manager conventions:
 ### Key Files
 
 - `app/controllers/secrets_manager_controller.rb` - Main API controller
-- `app/services/aws_secrets_manager_forwarder.rb` - Forwards requests to AWS Secrets Manager
+- `app/services/aws_secrets_manager_forwarder.rb` - Forwards requests to AWS Secrets Manager (with caching)
+- `app/services/secrets_cache.rb` - Thread-safe in-memory cache for secrets
 - `config/routes.rb` - Route definitions
+
+### Caching Strategy
+
+The forwarder implements an in-memory caching layer:
+- Secrets are cached by ID/ARN and version stage (default: AWSCURRENT)
+- Cache is checked before making AWS requests
+- Fetched secrets are automatically cached
+- Large requests (>20 secrets) are split into concurrent fiber-based batches per AWS limits
+- Cache writes are synchronized with a Mutex; reads are lock-free for performance
 
 ## Implemented Operations
 
