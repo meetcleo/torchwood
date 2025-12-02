@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
-# Forwards requests to AWS Secrets Manager API.
+# Forwards requests to AWS Secrets Manager API with caching support.
 #
-# This service takes the raw request details and forwards them to the actual
-# AWS Secrets Manager endpoint, signing the request using AWS credentials.
+# This service handles BatchGetSecretValue requests by:
+# 1. Checking the in-memory cache for requested secrets
+# 2. Fetching uncached secrets from AWS Secrets Manager
+# 3. Splitting large requests into parallel batches if needed
+# 4. Storing fetched secrets in the cache
 #
 # @example
 #   forwarder = AwsSecretsManagerForwarder.new
@@ -12,21 +15,29 @@
 #     body: '{"SecretIdList": ["my-secret"]}'
 #   )
 class AwsSecretsManagerForwarder
+  # Maximum number of secrets per BatchGetSecretValue request (AWS limit).
+  MAX_BATCH_SIZE = 20
+
   # @return [Aws::SecretsManager::Client] the AWS SDK client
   attr_reader :client
 
   # @return [String] the AWS region
   attr_reader :region
 
+  # @return [SecretsCache] the secrets cache
+  attr_reader :cache
+
   # Initializes a new forwarder.
   #
   # @param region [String, nil] AWS region (defaults to AWS_REGION env var or us-east-1)
   # @param credentials [Aws::Credentials, nil] AWS credentials (defaults to SDK chain)
-  def initialize(region: nil, credentials: nil)
+  # @param cache [SecretsCache, nil] cache instance (defaults to singleton)
+  def initialize(region: nil, credentials: nil, cache: nil)
     @region = region || ENV.fetch("AWS_REGION", "us-east-1")
     client_options = { region: @region }
     client_options[:credentials] = credentials if credentials
     @client = Aws::SecretsManager::Client.new(client_options)
+    @cache = cache || SecretsCache.instance
   end
 
   # Forwards a request to AWS Secrets Manager.
@@ -41,14 +52,14 @@ class AwsSecretsManagerForwarder
 
     result = case operation
     when "BatchGetSecretValue"
-      forward_batch_get_secret_value(parsed_body)
+      handle_batch_get_secret_value(parsed_body)
     else
       raise NotImplementedError, "Operation #{operation} is not supported"
     end
 
     ForwardResponse.new(
       status: 200,
-      body: result.to_h.to_json,
+      body: result.to_json,
       headers: { "Content-Type" => "application/x-amz-json-1.1" }
     )
   rescue Aws::SecretsManager::Errors::ServiceError => e
@@ -97,15 +108,95 @@ class AwsSecretsManagerForwarder
     end
   end
 
-  # Forwards a BatchGetSecretValue request.
+  # Handles BatchGetSecretValue with caching and batch splitting.
   #
   # @param params [Hash] the request parameters
-  # @return [Aws::SecretsManager::Types::BatchGetSecretValueResponse]
-  def forward_batch_get_secret_value(params)
-    @client.batch_get_secret_value(
-      secret_id_list: params["SecretIdList"],
-      filters: params["Filters"]&.map { |f| { key: f["Key"], values: f["Values"] } }
+  # @return [Hash] the combined response with secret_values and errors
+  def handle_batch_get_secret_value(params)
+    secret_ids = params["SecretIdList"] || []
+    version_stage = params["VersionStage"] || SecretsCache::DEFAULT_VERSION_STAGE
+
+    # Check cache for requested secrets
+    cache_result = @cache.get_many(secret_ids, version_stage)
+    cached_secrets = cache_result[:cached]
+    missing_ids = cache_result[:missing]
+
+    Rails.logger.info "[SecretsCache] Cache hit: #{cached_secrets.size}, Cache miss: #{missing_ids.size}"
+
+    # If all secrets are cached, return immediately
+    if missing_ids.empty?
+      return {
+        secret_values: cached_secrets,
+        errors: []
+      }
+    end
+
+    # Fetch missing secrets from AWS (with batch splitting if needed)
+    aws_result = fetch_from_aws(missing_ids, version_stage)
+
+    # Cache the fetched secrets
+    @cache.set_many(aws_result[:secret_values], version_stage)
+
+    # Combine cached and fetched secrets
+    {
+      secret_values: cached_secrets + aws_result[:secret_values],
+      errors: aws_result[:errors]
+    }
+  end
+
+  # Fetches secrets from AWS, splitting into parallel batches if needed.
+  #
+  # @param secret_ids [Array<String>] list of secret IDs to fetch
+  # @param version_stage [String] the version stage
+  # @return [Hash] combined result with :secret_values and :errors
+  def fetch_from_aws(secret_ids, version_stage)
+    # Split into batches of MAX_BATCH_SIZE
+    batches = secret_ids.each_slice(MAX_BATCH_SIZE).to_a
+
+    if batches.size == 1
+      # Single batch, no parallelization needed
+      fetch_batch(batches.first, version_stage)
+    else
+      # Multiple batches, fetch in parallel
+      Rails.logger.info "[SecretsCache] Splitting #{secret_ids.size} secrets into #{batches.size} parallel batches"
+      fetch_batches_parallel(batches, version_stage)
+    end
+  end
+
+  # Fetches a single batch of secrets from AWS.
+  #
+  # @param secret_ids [Array<String>] list of secret IDs (max MAX_BATCH_SIZE)
+  # @param version_stage [String] the version stage
+  # @return [Hash] result with :secret_values and :errors
+  def fetch_batch(secret_ids, version_stage)
+    response = @client.batch_get_secret_value(
+      secret_id_list: secret_ids,
+      filters: nil
     )
+
+    {
+      secret_values: response.secret_values.map(&:to_h),
+      errors: response.errors.map(&:to_h)
+    }
+  end
+
+  # Fetches multiple batches in parallel using threads.
+  #
+  # @param batches [Array<Array<String>>] array of secret ID batches
+  # @param version_stage [String] the version stage
+  # @return [Hash] combined result with :secret_values and :errors
+  def fetch_batches_parallel(batches, version_stage)
+    threads = batches.map do |batch|
+      Thread.new { fetch_batch(batch, version_stage) }
+    end
+
+    results = threads.map(&:value)
+
+    # Combine all results
+    {
+      secret_values: results.flat_map { |r| r[:secret_values] },
+      errors: results.flat_map { |r| r[:errors] }
+    }
   end
 end
 
