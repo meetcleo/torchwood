@@ -6,5 +6,6 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   # AWS Secrets Manager API endpoint
-  post "/" => "secrets_manager#batch_get_secret_value"
+  # All operations use POST / with X-Amz-Target header to determine the action
+  post "/" => "secrets_manager#handle"
 end

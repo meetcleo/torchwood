@@ -43,16 +43,44 @@ The API follows AWS Secrets Manager conventions:
 ### Key Files
 
 - `app/controllers/secrets_manager_controller.rb` - Main API controller
+- `app/services/aws_secrets_manager_forwarder.rb` - Forwards requests to AWS Secrets Manager
 - `config/routes.rb` - Route definitions
 
 ## Implemented Operations
 
 | Operation | X-Amz-Target | Status |
 |-----------|--------------|--------|
-| BatchGetSecretValue | `secretsmanager.BatchGetSecretValue` | Stub (logs request, returns 200) |
+| BatchGetSecretValue | `secretsmanager.BatchGetSecretValue` | Forwards to AWS |
 
 ## Adding New Operations
 
-1. Add a new action to `SecretsManagerController`
-2. Route based on `X-Amz-Target` header or add a new route
+1. Add a new case to `AwsSecretsManagerForwarder#forward` method
+2. Implement the corresponding `forward_*` private method
 3. Update this table when adding new operations
+
+## Code Style
+
+### Documentation and Types
+
+When writing Ruby code, always include:
+
+1. **YARD documentation** for all classes, modules, and public methods:
+   ```ruby
+   # Short description of what the method does.
+   #
+   # @param name [String] description of parameter
+   # @param options [Hash] description of options
+   # @return [Boolean] description of return value
+   # @raise [ArgumentError] when the input is invalid
+   def example_method(name, options = {})
+   end
+   ```
+
+2. **RBS type signatures** in corresponding `.rbs` files under `sig/`:
+   ```rbs
+   # sig/app/services/example_service.rbs
+   class ExampleService
+     def example_method: (String name, ?Hash[Symbol, untyped] options) -> bool
+   end
+   ```
+

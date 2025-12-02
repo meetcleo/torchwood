@@ -4,6 +4,8 @@ source "https://rubygems.org"
 gem "rails", "~> 8.1.1"
 # Use the Falcon web server [https://github.com/socketry/falcon]
 gem "falcon"
+# AWS SDK for signing requests to AWS Secrets Manager
+gem "aws-sdk-secretsmanager", "~> 1.0"
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
