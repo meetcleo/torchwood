@@ -3,7 +3,10 @@
 # In-memory cache for AWS Secrets Manager secret values.
 #
 # Caches secrets by their ID and version stage combination.
-# Thread-safe using a Mutex for concurrent access.
+# Write operations are synchronized with a Mutex; read operations are lock-free
+# for better performance in read-heavy workloads. This means reads may occasionally
+# see stale data during concurrent writes, which is acceptable as it only results
+# in extra AWS requests.
 #
 # @example
 #   cache = SecretsCache.instance
@@ -20,15 +23,13 @@ class SecretsCache
     @mutex = Mutex.new
   end
 
-  # Retrieves a cached secret value.
+  # Retrieves a cached secret value (lock-free).
   #
   # @param secret_id [String] the secret ID or ARN
   # @param version_stage [String] the version stage (default: AWSCURRENT)
   # @return [Hash, nil] the cached secret data or nil if not found
   def get(secret_id, version_stage = DEFAULT_VERSION_STAGE)
-    @mutex.synchronize do
-      @cache[cache_key(secret_id, version_stage)]
-    end
+    @cache[cache_key(secret_id, version_stage)]
   end
 
   # Stores a secret value in the cache.
@@ -43,7 +44,7 @@ class SecretsCache
     end
   end
 
-  # Retrieves multiple secrets from cache.
+  # Retrieves multiple secrets from cache (lock-free).
   #
   # @param secret_ids [Array<String>] list of secret IDs to retrieve
   # @param version_stage [String] the version stage (default: AWSCURRENT)
@@ -52,14 +53,13 @@ class SecretsCache
     cached = []
     missing = []
 
-    @mutex.synchronize do
-      secret_ids.each do |secret_id|
-        key = cache_key(secret_id, version_stage)
-        if @cache.key?(key)
-          cached << @cache[key]
-        else
-          missing << secret_id
-        end
+    secret_ids.each do |secret_id|
+      key = cache_key(secret_id, version_stage)
+      value = @cache[key]
+      if value
+        cached << value
+      else
+        missing << secret_id
       end
     end
 
@@ -97,13 +97,11 @@ class SecretsCache
     end
   end
 
-  # Returns the number of cached entries.
+  # Returns the number of cached entries (lock-free).
   #
   # @return [Integer] cache size
   def size
-    @mutex.synchronize do
-      @cache.size
-    end
+    @cache.size
   end
 
   private
