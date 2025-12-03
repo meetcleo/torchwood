@@ -9,6 +9,12 @@ GEM
       nio4r (~> 2.0)
       websocket-driver (>= 0.6.1)
       zeitwerk (~> 2.6)
+    actioncable-next (0.3.1)
+      actionpack (>= 7.0, <= 8.2)
+      activesupport (>= 7.0, <= 8.2)
+      nio4r (~> 2.0)
+      websocket-driver (>= 0.6.1)
+      zeitwerk (~> 2.6)
     actionmailbox (8.1.1)
       actionpack (= 8.1.1)
       activejob (= 8.1.1)
@@ -82,6 +88,10 @@ GEM
       io-event (~> 1.11)
       metrics (~> 0.12)
       traces (~> 0.18)
+    async-cable (0.3.0)
+      actioncable-next
+      async (~> 2.9)
+      async-websocket
     async-container (0.27.7)
       async (~> 2.22)
     async-container-supervisor (0.9.1)
@@ -103,12 +113,23 @@ GEM
       traces (~> 0.10)
     async-http-cache (0.4.6)
       async-http (~> 0.56)
+    async-job (0.11.1)
+      async (~> 2.9)
+      string-format (~> 0.2)
+    async-job-adapter-active_job (0.18.3)
+      async-job (~> 0.9)
+      async-service (~> 0.12)
     async-pool (0.11.0)
       async (>= 2.0)
     async-service (0.15.1)
       async
       async-container (~> 0.16)
       string-format (~> 0.2)
+    async-websocket (0.30.0)
+      async-http (~> 0.76)
+      protocol-http (~> 0.34)
+      protocol-rack (~> 0.7)
+      protocol-websocket (~> 0.17)
     aws-eventstream (1.4.0)
     aws-partitions (1.1189.0)
     aws-sdk-core (3.239.2)
@@ -144,6 +165,10 @@ GEM
       fiber-annotation
       fiber-local (~> 1.1)
       json
+    console-adapter-rails (0.4.1)
+      console (~> 1.21)
+      fiber-storage (~> 1.0)
+      rails (>= 6.1)
     crass (1.0.6)
     date (3.5.0)
     debug (1.11.0)
@@ -167,6 +192,15 @@ GEM
       protocol-http (~> 0.31)
       protocol-rack (~> 0.7)
       samovar (~> 2.3)
+    falcon-rails (0.2.4)
+      async-cable
+      async-job-adapter-active_job
+      async-websocket
+      bake
+      console-adapter-rails
+      falcon
+      live
+      rails (>= 8.0)
     fiber-annotation (0.2.0)
     fiber-local (1.1.0)
       fiber-storage
@@ -198,6 +232,10 @@ GEM
       zeitwerk (>= 2.6.18, < 3.0)
     language_server-protocol (3.17.0.5)
     lint_roller (1.1.0)
+    live (0.18.0)
+      async-websocket (~> 0.27)
+      protocol-websocket (~> 0.19)
+      xrb (~> 0.10)
     localhost (1.6.0)
     logger (1.7.0)
     loofah (2.24.1)
@@ -275,6 +313,8 @@ GEM
       protocol-http (~> 0.43)
       rack (>= 1.0)
     protocol-url (0.4.0)
+    protocol-websocket (0.20.2)
+      protocol-http (~> 0.2)
     psych (5.2.6)
       date
       stringio
@@ -389,6 +429,7 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
+    xrb (0.11.2)
     zeitwerk (2.7.3)
 
 PLATFORMS
@@ -408,7 +449,7 @@ DEPENDENCIES
   brakeman
   bundler-audit
   debug
-  falcon
+  falcon-rails
   kamal
   rails (~> 8.1.1)
   rails_semantic_logger

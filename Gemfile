@@ -3,7 +3,7 @@ source "https://rubygems.org"
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
 gem "rails", "~> 8.1.1"
 # Use the Falcon web server [https://github.com/socketry/falcon]
-gem "falcon"
+gem "falcon-rails"
 # AWS SDK for signing requests to AWS Secrets Manager
 gem "aws-sdk-secretsmanager", "~> 1.0"
 
