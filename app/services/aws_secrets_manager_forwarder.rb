@@ -4,11 +4,14 @@ require "async"
 
 # Forwards requests to AWS Secrets Manager API with caching support.
 #
-# This service handles BatchGetSecretValue requests by:
+# This service handles all Secrets Manager operations by forwarding them to AWS.
+# BatchGetSecretValue has custom handling with:
 # 1. Checking the in-memory cache for requested secrets
 # 2. Fetching uncached secrets from AWS Secrets Manager
 # 3. Splitting large requests into concurrent fiber-based batches if needed
 # 4. Storing fetched secrets in the cache
+#
+# All other operations are forwarded directly to AWS without caching.
 #
 # Uses Async for fiber-based concurrency to integrate properly with Falcon.
 #
@@ -17,6 +20,13 @@ require "async"
 #   response = forwarder.forward(
 #     target: "secretsmanager.BatchGetSecretValue",
 #     body: '{"SecretIdList": ["my-secret"]}'
+#   )
+#
+# @example
+#   forwarder = AwsSecretsManagerForwarder.new
+#   response = forwarder.forward(
+#     target: "secretsmanager.GetSecretValue",
+#     body: '{"SecretId": "my-secret"}'
 #   )
 class AwsSecretsManagerForwarder
   # Maximum number of secrets per BatchGetSecretValue request (AWS limit).
@@ -58,7 +68,7 @@ class AwsSecretsManagerForwarder
     when "BatchGetSecretValue"
       handle_batch_get_secret_value(parsed_body)
     else
-      raise NotImplementedError, "Operation #{operation} is not supported"
+      forward_to_aws(operation, parsed_body)
     end
 
     ForwardResponse.new(
@@ -76,6 +86,12 @@ class AwsSecretsManagerForwarder
     ForwardResponse.new(
       status: 400,
       body: { "__type" => "InvalidRequestException", "Message" => "Invalid JSON: #{e.message}" }.to_json,
+      headers: { "Content-Type" => "application/x-amz-json-1.1" }
+    )
+  rescue NoMethodError => e
+    ForwardResponse.new(
+      status: 400,
+      body: { "__type" => "InvalidRequestException", "Message" => e.message }.to_json,
       headers: { "Content-Type" => "application/x-amz-json-1.1" }
     )
   end
@@ -109,6 +125,38 @@ class AwsSecretsManagerForwarder
       500
     else
       400
+    end
+  end
+
+  # Forwards an operation directly to AWS Secrets Manager.
+  #
+  # Converts the PascalCase operation name to snake_case and calls the
+  # corresponding method on the AWS SDK client.
+  #
+  # @param operation [String] the operation name (e.g., "GetSecretValue")
+  # @param params [Hash] the request parameters with string keys
+  # @return [Hash] the response from AWS as a hash
+  def forward_to_aws(operation, params)
+    method_name = operation.gsub(/([a-z])([A-Z])/, '\1_\2').downcase.to_sym
+    symbolized_params = deep_underscore_keys(params)
+
+    response = @client.send(method_name, **symbolized_params)
+    response.to_h
+  end
+
+  # Recursively converts hash keys from PascalCase to snake_case symbols.
+  #
+  # @param value [Object] the value to convert
+  # @return [Object] the converted value
+  def deep_underscore_keys(value)
+    case value
+    when Hash
+      value.transform_keys { |k| k.gsub(/([a-z])([A-Z])/, '\1_\2').downcase.to_sym }
+           .transform_values { |v| deep_underscore_keys(v) }
+    when Array
+      value.map { |v| deep_underscore_keys(v) }
+    else
+      value
     end
   end
 

@@ -81,15 +81,14 @@ The forwarder implements an in-memory caching layer:
 
 ## Implemented Operations
 
-| Operation | X-Amz-Target | Status |
-|-----------|--------------|--------|
-| BatchGetSecretValue | `secretsmanager.BatchGetSecretValue` | Forwards to AWS |
+All AWS Secrets Manager operations are supported and forwarded to AWS:
 
-## Adding New Operations
+| Operation | X-Amz-Target | Notes |
+|-----------|--------------|-------|
+| BatchGetSecretValue | `secretsmanager.BatchGetSecretValue` | Custom handling with caching and batch splitting |
+| All other operations | `secretsmanager.<OperationName>` | Direct forwarding to AWS |
 
-1. Add a new case to `AwsSecretsManagerForwarder#forward` method
-2. Implement the corresponding `forward_*` private method
-3. Update this table when adding new operations
+Supported operations include: `GetSecretValue`, `CreateSecret`, `DeleteSecret`, `DescribeSecret`, `ListSecrets`, `PutSecretValue`, `UpdateSecret`, `RotateSecret`, `GetRandomPassword`, `TagResource`, `UntagResource`, and more.
 
 ## Code Style
 

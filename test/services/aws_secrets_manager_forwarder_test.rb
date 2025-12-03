@@ -53,13 +53,16 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_includes parsed["Message"], "Invalid JSON"
   end
 
-  test "forward raises NotImplementedError for unsupported operation" do
-    assert_raises NotImplementedError do
-      @forwarder.forward(
-        target: "secretsmanager.UnsupportedOperation",
-        body: "{}"
-      )
-    end
+  test "forward returns error response for unsupported operation" do
+    response = @forwarder.forward(
+      target: "secretsmanager.UnsupportedOperation",
+      body: "{}"
+    )
+
+    assert_equal 400, response.status
+    parsed = JSON.parse(response.body)
+    assert_equal "InvalidRequestException", parsed["__type"]
+    assert_includes parsed["Message"], "unsupported_operation"
   end
 
   # === Caching tests ===
