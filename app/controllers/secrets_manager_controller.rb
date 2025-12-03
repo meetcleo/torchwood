@@ -24,11 +24,6 @@ class SecretsManagerController < ApplicationController
       return
     end
 
-    Rails.logger.info "=== SecretsManager Request ==="
-    Rails.logger.info "Target: #{target}"
-    Rails.logger.info "Body: #{request.raw_post}"
-    Rails.logger.info "=============================="
-
     response = forwarder.forward(target: target, body: request.raw_post)
 
     response.headers.each do |key, value|

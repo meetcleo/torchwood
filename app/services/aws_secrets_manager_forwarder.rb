@@ -194,8 +194,6 @@ class AwsSecretsManagerForwarder
     # Extract just the IDs from missing (which is now an array of hashes)
     missing_ids = missing.map { |m| m[:id] }
 
-    Rails.logger.info "[SecretsCache] Cache hit: #{cached_secrets.size}, Cache miss: #{missing_ids.size}"
-
     # If all secrets are cached, return immediately
     if missing_ids.empty?
       return {
@@ -231,11 +229,8 @@ class AwsSecretsManagerForwarder
       cache_result = @cache.get_many([ { id: secret_id, version_stage: version_stage } ])
 
       if cache_result[:cached].any?
-        Rails.logger.info "[SecretsCache] GetSecretValue cache hit for #{secret_id}"
         return cache_result[:cached].first
       end
-
-      Rails.logger.info "[SecretsCache] GetSecretValue cache miss for #{secret_id}"
     end
 
     # Fetch from AWS
@@ -265,7 +260,6 @@ class AwsSecretsManagerForwarder
       fetch_batch(batches.first)
     else
       # Multiple batches, fetch in parallel
-      Rails.logger.info "[SecretsCache] Splitting #{secret_ids.size} secrets into #{batches.size} parallel batches"
       fetch_batches_parallel(batches)
     end
   end
