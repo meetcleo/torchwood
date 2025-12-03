@@ -75,7 +75,7 @@ class AwsSecretsManagerForwarder
 
     ForwardResponse.new(
       status: 200,
-      body: result.to_json,
+      body: deep_pascalize_keys(result).to_json,
       headers: { "Content-Type" => "application/x-amz-json-1.1" }
     )
   rescue Aws::SecretsManager::Errors::ServiceError => e
@@ -157,6 +157,23 @@ class AwsSecretsManagerForwarder
            .transform_values { |v| deep_underscore_keys(v) }
     when Array
       value.map { |v| deep_underscore_keys(v) }
+    else
+      value
+    end
+  end
+
+  # Recursively converts hash keys from snake_case to PascalCase strings.
+  # This is needed because AWS SDK returns snake_case but AWS REST API expects PascalCase.
+  #
+  # @param value [Object] the value to convert
+  # @return [Object] the converted value with PascalCase string keys
+  def deep_pascalize_keys(value)
+    case value
+    when Hash
+      value.transform_keys { |k| k.to_s.split("_").map(&:capitalize).join }
+           .transform_values { |v| deep_pascalize_keys(v) }
+    when Array
+      value.map { |v| deep_pascalize_keys(v) }
     else
       value
     end

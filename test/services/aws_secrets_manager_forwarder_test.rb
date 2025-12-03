@@ -36,7 +36,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_equal "application/x-amz-json-1.1", response.headers["Content-Type"]
 
     parsed = JSON.parse(response.body)
-    assert_equal 1, parsed["secret_values"].size
+    assert_equal 1, parsed["SecretValues"].size
 
     mock_client.verify
   end
@@ -83,8 +83,8 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     assert_equal 200, response.status
     parsed = JSON.parse(response.body)
-    assert_equal 1, parsed["secret_values"].size
-    assert_equal "cached-secret", parsed["secret_values"][0]["name"]
+    assert_equal 1, parsed["SecretValues"].size
+    assert_equal "cached-secret", parsed["SecretValues"][0]["Name"]
 
     # Mock should not have been called
     mock_client.verify
@@ -139,7 +139,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     assert_equal 200, response.status
     parsed = JSON.parse(response.body)
-    assert_equal 2, parsed["secret_values"].size
+    assert_equal 2, parsed["SecretValues"].size
 
     mock_client.verify
   end
@@ -182,7 +182,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     assert_equal 200, response.status
     parsed = JSON.parse(response.body)
-    assert_equal 25, parsed["secret_values"].size
+    assert_equal 25, parsed["SecretValues"].size
     assert_equal 2, call_count
   end
 
@@ -243,8 +243,8 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     assert_equal 200, response.status
     parsed = JSON.parse(response.body)
-    assert_equal 23, parsed["secret_values"].size
-    assert_equal 2, parsed["errors"].size
+    assert_equal 23, parsed["SecretValues"].size
+    assert_equal 2, parsed["Errors"].size
   end
 
   # === GetSecretValue caching tests ===
@@ -265,8 +265,8 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     assert_equal 200, response.status
     parsed = JSON.parse(response.body)
-    assert_equal "cached-secret", parsed["name"]
-    assert_equal "cached-value", parsed["secret_string"]
+    assert_equal "cached-secret", parsed["Name"]
+    assert_equal "cached-value", parsed["SecretString"]
 
     # Mock should not have been called
     mock_client.verify
