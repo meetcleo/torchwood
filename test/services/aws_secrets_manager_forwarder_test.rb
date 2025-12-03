@@ -372,6 +372,117 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_equal "ResourceNotFoundException", parsed["__type"]
   end
 
+  # === Integration tests for version stage caching ===
+
+  test "caches secrets by version stage and fetches missing stages from AWS" do
+    # Secret A has stages AWSCURRENT and CLEO-001
+    # Secret B has stages AWSCURRENT and CLEO-002
+    secret_a = {
+      name: "secret-a",
+      secret_string: "value-a",
+      version_stages: %w[AWSCURRENT CLEO-001]
+    }
+    secret_b = {
+      name: "secret-b",
+      secret_string: "value-b",
+      version_stages: %w[AWSCURRENT CLEO-002]
+    }
+
+    batch_response = mock_aws_response(
+      secret_values: [secret_a, secret_b],
+      errors: []
+    )
+
+    aws_calls = []
+    mock_client = Object.new
+    mock_client.define_singleton_method(:batch_get_secret_value) do |**args|
+      aws_calls << { method: :batch_get_secret_value, args: args }
+      batch_response
+    end
+    mock_client.define_singleton_method(:get_secret_value) do |**args|
+      aws_calls << { method: :get_secret_value, args: args }
+      # Return appropriate secret based on request
+      response = Object.new
+      response.define_singleton_method(:to_h) do
+        {
+          name: args[:secret_id],
+          secret_string: "#{args[:secret_id]}-#{args[:version_stage]}",
+          version_stages: [args[:version_stage]]
+        }
+      end
+      response
+    end
+
+    @forwarder.instance_variable_set(:@client, mock_client)
+
+    # Step 1: Batch request for secrets A and B
+    response1 = @forwarder.forward(
+      target: "secretsmanager.BatchGetSecretValue",
+      body: '{"SecretIdList": ["secret-a", "secret-b"]}'
+    )
+    assert_equal 200, response1.status
+    parsed1 = JSON.parse(response1.body)
+    assert_equal 2, parsed1["SecretValues"].size
+
+    # Verify only one AWS call was made (the batch)
+    assert_equal 1, aws_calls.size
+    assert_equal :batch_get_secret_value, aws_calls[0][:method]
+
+    # Step 2: Request secret B with stage CLEO-001 (not cached for B)
+    response2 = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "secret-b", "VersionStage": "CLEO-001"}'
+    )
+    assert_equal 200, response2.status
+    parsed2 = JSON.parse(response2.body)
+    assert_equal "secret-b", parsed2["Name"]
+
+    # Verify a new AWS call was made
+    assert_equal 2, aws_calls.size
+    assert_equal :get_secret_value, aws_calls[1][:method]
+    assert_equal "secret-b", aws_calls[1][:args][:secret_id]
+    assert_equal "CLEO-001", aws_calls[1][:args][:version_stage]
+
+    # Step 3: Request secret A with stage CLEO-002 (not cached for A)
+    response3 = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "secret-a", "VersionStage": "CLEO-002"}'
+    )
+    assert_equal 200, response3.status
+    parsed3 = JSON.parse(response3.body)
+    assert_equal "secret-a", parsed3["Name"]
+
+    # Verify another AWS call was made
+    assert_equal 3, aws_calls.size
+    assert_equal :get_secret_value, aws_calls[2][:method]
+    assert_equal "secret-a", aws_calls[2][:args][:secret_id]
+    assert_equal "CLEO-002", aws_calls[2][:args][:version_stage]
+
+    # Step 4: Request secret A with stage CLEO-001 (should be cached!)
+    response4 = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "secret-a", "VersionStage": "CLEO-001"}'
+    )
+    assert_equal 200, response4.status
+    parsed4 = JSON.parse(response4.body)
+    assert_equal "secret-a", parsed4["Name"]
+
+    # Verify NO new AWS call was made (still 3 calls)
+    assert_equal 3, aws_calls.size, "Expected cache hit for secret-a with CLEO-001 stage"
+
+    # Step 5: Request secret B with stage CLEO-002 (should be cached!)
+    response5 = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "secret-b", "VersionStage": "CLEO-002"}'
+    )
+    assert_equal 200, response5.status
+    parsed5 = JSON.parse(response5.body)
+    assert_equal "secret-b", parsed5["Name"]
+
+    # Verify NO new AWS call was made (still 3 calls)
+    assert_equal 3, aws_calls.size, "Expected cache hit for secret-b with CLEO-002 stage"
+  end
+
   # === Region configuration tests ===
 
   test "uses default region when not specified" do
