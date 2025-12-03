@@ -67,6 +67,8 @@ class AwsSecretsManagerForwarder
     result = case operation
     when "BatchGetSecretValue"
       handle_batch_get_secret_value(parsed_body)
+    when "GetSecretValue"
+      handle_get_secret_value(parsed_body)
     else
       forward_to_aws(operation, parsed_body)
     end
@@ -166,12 +168,14 @@ class AwsSecretsManagerForwarder
   # @return [Hash] the combined response with secret_values and errors
   def handle_batch_get_secret_value(params)
     secret_ids = params["SecretIdList"] || []
-    version_stage = params["VersionStage"] || SecretsCache::DEFAULT_VERSION_STAGE
 
-    # Check cache for requested secrets
-    cache_result = @cache.get_many(secret_ids, version_stage)
+    # Check cache for requested secrets (always uses AWSCURRENT)
+    cache_result = @cache.get_many(secret_ids)
     cached_secrets = cache_result[:cached]
-    missing_ids = cache_result[:missing]
+    missing = cache_result[:missing]
+
+    # Extract just the IDs from missing (which is now an array of hashes)
+    missing_ids = missing.map { |m| m[:id] }
 
     Rails.logger.info "[SecretsCache] Cache hit: #{cached_secrets.size}, Cache miss: #{missing_ids.size}"
 
@@ -184,10 +188,10 @@ class AwsSecretsManagerForwarder
     end
 
     # Fetch missing secrets from AWS (with batch splitting if needed)
-    aws_result = fetch_from_aws(missing_ids, version_stage)
+    aws_result = fetch_from_aws(missing_ids)
 
-    # Cache the fetched secrets
-    @cache.set_many(aws_result[:secret_values], version_stage)
+    # Cache the fetched secrets (uses version_stages from each secret's data)
+    @cache.set_many(aws_result[:secret_values])
 
     # Combine cached and fetched secrets
     {
@@ -196,31 +200,64 @@ class AwsSecretsManagerForwarder
     }
   end
 
+  # Handles GetSecretValue with caching.
+  #
+  # @param params [Hash] the request parameters
+  # @return [Hash] the secret value response
+  def handle_get_secret_value(params)
+    secret_id = params["SecretId"]
+    version_stage = params["VersionStage"] || SecretsCache::DEFAULT_VERSION_STAGE
+    version_id = params["VersionId"]
+
+    # Only use cache if no specific VersionId is requested
+    if version_id.nil?
+      cache_result = @cache.get_many([ { id: secret_id, version_stage: version_stage } ])
+
+      if cache_result[:cached].any?
+        Rails.logger.info "[SecretsCache] GetSecretValue cache hit for #{secret_id}"
+        return cache_result[:cached].first
+      end
+
+      Rails.logger.info "[SecretsCache] GetSecretValue cache miss for #{secret_id}"
+    end
+
+    # Fetch from AWS
+    response = @client.get_secret_value(
+      secret_id: secret_id,
+      version_stage: version_stage,
+      version_id: version_id
+    )
+    secret_data = response.to_h
+
+    # Cache the result (only if no specific version_id was requested)
+    @cache.set_many([ secret_data ]) if version_id.nil?
+
+    secret_data
+  end
+
   # Fetches secrets from AWS, splitting into parallel batches if needed.
   #
   # @param secret_ids [Array<String>] list of secret IDs to fetch
-  # @param version_stage [String] the version stage
   # @return [Hash] combined result with :secret_values and :errors
-  def fetch_from_aws(secret_ids, version_stage)
+  def fetch_from_aws(secret_ids)
     # Split into batches of MAX_BATCH_SIZE
     batches = secret_ids.each_slice(MAX_BATCH_SIZE).to_a
 
     if batches.size == 1
       # Single batch, no parallelization needed
-      fetch_batch(batches.first, version_stage)
+      fetch_batch(batches.first)
     else
       # Multiple batches, fetch in parallel
       Rails.logger.info "[SecretsCache] Splitting #{secret_ids.size} secrets into #{batches.size} parallel batches"
-      fetch_batches_parallel(batches, version_stage)
+      fetch_batches_parallel(batches)
     end
   end
 
   # Fetches a single batch of secrets from AWS.
   #
   # @param secret_ids [Array<String>] list of secret IDs (max MAX_BATCH_SIZE)
-  # @param version_stage [String] the version stage
   # @return [Hash] result with :secret_values and :errors
-  def fetch_batch(secret_ids, version_stage)
+  def fetch_batch(secret_ids)
     response = @client.batch_get_secret_value(
       secret_id_list: secret_ids,
       filters: nil
@@ -238,12 +275,11 @@ class AwsSecretsManagerForwarder
   # properly with Falcon's fiber-based architecture.
   #
   # @param batches [Array<Array<String>>] array of secret ID batches
-  # @param version_stage [String] the version stage
   # @return [Hash] combined result with :secret_values and :errors
-  def fetch_batches_parallel(batches, version_stage)
+  def fetch_batches_parallel(batches)
     results = Sync do
       batches.map do |batch|
-        Async { fetch_batch(batch, version_stage) }
+        Async { fetch_batch(batch) }
       end.map(&:wait)
     end
 

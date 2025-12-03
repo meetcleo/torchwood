@@ -144,31 +144,6 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     mock_client.verify
   end
 
-  test "respects VersionStage parameter for cache lookup" do
-    # Cache secret for AWSCURRENT
-    current_secret = { name: "my-secret", secret_string: "current-value" }
-    @cache.set_many([current_secret], "AWSCURRENT")
-
-    # Request with AWSPREVIOUS should miss cache and call AWS
-    mock_response = mock_aws_response(
-      secret_values: [{ name: "my-secret", secret_string: "previous-value" }],
-      errors: []
-    )
-
-    mock_client = Minitest::Mock.new
-    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: ["my-secret"], filters: nil)
-
-    @forwarder.instance_variable_set(:@client, mock_client)
-
-    response = @forwarder.forward(
-      target: "secretsmanager.BatchGetSecretValue",
-      body: '{"SecretIdList": ["my-secret"], "VersionStage": "AWSPREVIOUS"}'
-    )
-
-    assert_equal 200, response.status
-    mock_client.verify
-  end
-
   # === Batch splitting tests ===
 
   test "splits large requests into batches" do
@@ -270,6 +245,109 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     parsed = JSON.parse(response.body)
     assert_equal 23, parsed["secret_values"].size
     assert_equal 2, parsed["errors"].size
+  end
+
+  # === GetSecretValue caching tests ===
+
+  test "GetSecretValue returns cached secret without calling AWS" do
+    # Pre-populate cache
+    cached_secret = { name: "cached-secret", secret_string: "cached-value", version_stages: [ "AWSCURRENT" ] }
+    @cache.set_many([cached_secret])
+
+    # Create a mock that will fail if called
+    mock_client = Minitest::Mock.new
+    @forwarder.instance_variable_set(:@client, mock_client)
+
+    response = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "cached-secret"}'
+    )
+
+    assert_equal 200, response.status
+    parsed = JSON.parse(response.body)
+    assert_equal "cached-secret", parsed["name"]
+    assert_equal "cached-value", parsed["secret_string"]
+
+    # Mock should not have been called
+    mock_client.verify
+  end
+
+  test "GetSecretValue fetches from AWS and caches result" do
+    mock_response = Object.new
+    mock_response.define_singleton_method(:to_h) do
+      { name: "new-secret", secret_string: "new-value", version_stages: [ "AWSCURRENT" ] }
+    end
+
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:get_secret_value, mock_response,
+      secret_id: "new-secret", version_stage: "AWSCURRENT", version_id: nil)
+
+    @forwarder.instance_variable_set(:@client, mock_client)
+
+    response = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "new-secret"}'
+    )
+
+    assert_equal 200, response.status
+
+    # Verify secret was cached
+    result = @cache.get_many(["new-secret"])
+    assert_equal 1, result[:cached].size
+
+    mock_client.verify
+  end
+
+  test "GetSecretValue respects VersionStage parameter" do
+    # Cache AWSCURRENT
+    cached_secret = { name: "my-secret", secret_string: "current", version_stages: [ "AWSCURRENT" ] }
+    @cache.set_many([cached_secret])
+
+    # Request AWSPREVIOUS should miss cache
+    mock_response = Object.new
+    mock_response.define_singleton_method(:to_h) do
+      { name: "my-secret", secret_string: "previous", version_stages: [ "AWSPREVIOUS" ] }
+    end
+
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:get_secret_value, mock_response,
+      secret_id: "my-secret", version_stage: "AWSPREVIOUS", version_id: nil)
+
+    @forwarder.instance_variable_set(:@client, mock_client)
+
+    response = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "my-secret", "VersionStage": "AWSPREVIOUS"}'
+    )
+
+    assert_equal 200, response.status
+    mock_client.verify
+  end
+
+  test "GetSecretValue bypasses cache when VersionId is specified" do
+    # Pre-populate cache
+    cached_secret = { name: "my-secret", secret_string: "cached", version_stages: [ "AWSCURRENT" ] }
+    @cache.set_many([cached_secret])
+
+    # Request with specific VersionId should still call AWS
+    mock_response = Object.new
+    mock_response.define_singleton_method(:to_h) do
+      { name: "my-secret", secret_string: "specific-version", version_id: "abc123" }
+    end
+
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:get_secret_value, mock_response,
+      secret_id: "my-secret", version_stage: "AWSCURRENT", version_id: "abc123")
+
+    @forwarder.instance_variable_set(:@client, mock_client)
+
+    response = @forwarder.forward(
+      target: "secretsmanager.GetSecretValue",
+      body: '{"SecretId": "my-secret", "VersionId": "abc123"}'
+    )
+
+    assert_equal 200, response.status
+    mock_client.verify
   end
 
   # === Error handling tests ===
