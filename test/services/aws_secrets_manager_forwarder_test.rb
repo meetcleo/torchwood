@@ -18,12 +18,12 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
   test "forward BatchGetSecretValue returns successful response" do
     mock_response = mock_aws_response(
-      secret_values: [{ name: "test-secret", secret_string: "secret-value" }],
+      secret_values: [ { name: "test-secret", secret_string: "secret-value" } ],
       errors: []
     )
 
     mock_client = Minitest::Mock.new
-    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: ["test-secret"], filters: nil)
+    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: [ "test-secret" ], filters: nil)
 
     @forwarder.instance_variable_set(:@client, mock_client)
 
@@ -70,7 +70,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
   test "returns cached secrets without calling AWS" do
     # Pre-populate cache
     cached_secret = { name: "cached-secret", secret_string: "cached-value" }
-    @cache.set_many([cached_secret])
+    @cache.set_many([ cached_secret ])
 
     # Create a mock that will fail if called
     mock_client = Minitest::Mock.new
@@ -92,12 +92,12 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
   test "fetches uncached secrets from AWS and caches them" do
     mock_response = mock_aws_response(
-      secret_values: [{ name: "new-secret", secret_string: "new-value" }],
+      secret_values: [ { name: "new-secret", secret_string: "new-value" } ],
       errors: []
     )
 
     mock_client = Minitest::Mock.new
-    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: ["new-secret"], filters: nil)
+    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: [ "new-secret" ], filters: nil)
 
     @forwarder.instance_variable_set(:@client, mock_client)
 
@@ -109,7 +109,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_equal 200, response.status
 
     # Verify secret was cached
-    result = @cache.get_many(["new-secret"])
+    result = @cache.get_many([ "new-secret" ])
     assert_equal 1, result[:cached].size
     assert_equal "new-secret", result[:cached][0][:name]
 
@@ -119,16 +119,16 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
   test "combines cached and fetched secrets" do
     # Pre-populate cache with one secret
     cached_secret = { name: "cached-secret", secret_string: "cached-value" }
-    @cache.set_many([cached_secret])
+    @cache.set_many([ cached_secret ])
 
     # Mock AWS to return only the uncached secret
     mock_response = mock_aws_response(
-      secret_values: [{ name: "new-secret", secret_string: "new-value" }],
+      secret_values: [ { name: "new-secret", secret_string: "new-value" } ],
       errors: []
     )
 
     mock_client = Minitest::Mock.new
-    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: ["new-secret"], filters: nil)
+    mock_client.expect(:batch_get_secret_value, mock_response, secret_id_list: [ "new-secret" ], filters: nil)
 
     @forwarder.instance_variable_set(:@client, mock_client)
 
@@ -217,12 +217,12 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
     batch1_response = mock_aws_response(
       secret_values: (1..19).map { |i| { name: "secret-#{i}", secret_string: "value-#{i}" } },
-      errors: [{ secret_id: "secret-20", error_code: "ResourceNotFoundException" }]
+      errors: [ { secret_id: "secret-20", error_code: "ResourceNotFoundException" } ]
     )
 
     batch2_response = mock_aws_response(
       secret_values: (21..24).map { |i| { name: "secret-#{i}", secret_string: "value-#{i}" } },
-      errors: [{ secret_id: "secret-25", error_code: "ResourceNotFoundException" }]
+      errors: [ { secret_id: "secret-25", error_code: "ResourceNotFoundException" } ]
     )
 
     mock_client = Object.new
@@ -252,7 +252,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
   test "GetSecretValue returns cached secret without calling AWS" do
     # Pre-populate cache
     cached_secret = { name: "cached-secret", secret_string: "cached-value", version_stages: [ "AWSCURRENT" ] }
-    @cache.set_many([cached_secret])
+    @cache.set_many([ cached_secret ])
 
     # Create a mock that will fail if called
     mock_client = Minitest::Mock.new
@@ -292,7 +292,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_equal 200, response.status
 
     # Verify secret was cached
-    result = @cache.get_many(["new-secret"])
+    result = @cache.get_many([ "new-secret" ])
     assert_equal 1, result[:cached].size
 
     mock_client.verify
@@ -301,7 +301,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
   test "GetSecretValue respects VersionStage parameter" do
     # Cache AWSCURRENT
     cached_secret = { name: "my-secret", secret_string: "current", version_stages: [ "AWSCURRENT" ] }
-    @cache.set_many([cached_secret])
+    @cache.set_many([ cached_secret ])
 
     # Request AWSPREVIOUS should miss cache
     mock_response = Object.new
@@ -327,7 +327,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
   test "GetSecretValue bypasses cache when VersionId is specified" do
     # Pre-populate cache
     cached_secret = { name: "my-secret", secret_string: "cached", version_stages: [ "AWSCURRENT" ] }
-    @cache.set_many([cached_secret])
+    @cache.set_many([ cached_secret ])
 
     # Request with specific VersionId should still call AWS
     mock_response = Object.new
@@ -389,7 +389,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     }
 
     batch_response = mock_aws_response(
-      secret_values: [secret_a, secret_b],
+      secret_values: [ secret_a, secret_b ],
       errors: []
     )
 
@@ -407,7 +407,7 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
         {
           name: args[:secret_id],
           secret_string: "#{args[:secret_id]}-#{args[:version_stage]}",
-          version_stages: [args[:version_stage]]
+          version_stages: [ args[:version_stage] ]
         }
       end
       response

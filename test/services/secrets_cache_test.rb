@@ -20,7 +20,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
   end
 
   test "get_many returns all missing when cache is empty" do
-    result = @cache.get_many(["secret-1", "secret-2"])
+    result = @cache.get_many([ "secret-1", "secret-2" ])
 
     assert_empty result[:cached]
     assert_equal [
@@ -36,7 +36,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
     ]
     @cache.set_many(secrets)
 
-    result = @cache.get_many(["secret-1", "secret-2", "secret-3"])
+    result = @cache.get_many([ "secret-1", "secret-2", "secret-3" ])
 
     assert_equal 2, result[:cached].size
     assert_includes result[:cached], secrets[0]
@@ -51,25 +51,25 @@ class SecretsCacheTest < ActiveSupport::TestCase
     ]
     @cache.set_many(secrets)
 
-    result = @cache.get_many(["secret-1", "secret-2"])
+    result = @cache.get_many([ "secret-1", "secret-2" ])
 
     assert_equal 2, result[:cached].size
     assert_empty result[:missing]
   end
 
   test "get_many uses default version stage" do
-    secrets = [{ name: "my-secret", secret_string: "value" }]
+    secrets = [ { name: "my-secret", secret_string: "value" } ]
     @cache.set_many(secrets)
 
-    result = @cache.get_many(["my-secret"])
+    result = @cache.get_many([ "my-secret" ])
 
     assert_equal 1, result[:cached].size
   end
 
   test "different version stages are stored separately" do
     # version_stages comes from the secret data (as returned by AWS)
-    current = [{ name: "my-secret", secret_string: "current", version_stages: [ "AWSCURRENT" ] }]
-    previous = [{ name: "my-secret", secret_string: "previous", version_stages: [ "AWSPREVIOUS" ] }]
+    current = [ { name: "my-secret", secret_string: "current", version_stages: [ "AWSCURRENT" ] } ]
+    previous = [ { name: "my-secret", secret_string: "previous", version_stages: [ "AWSPREVIOUS" ] } ]
 
     @cache.set_many(current)
     @cache.set_many(previous)
@@ -84,7 +84,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
 
   test "stores secret under all its version stages" do
     # A secret can have multiple version stages (e.g., during rotation)
-    secret = [{ name: "my-secret", secret_string: "value", version_stages: [ "AWSCURRENT", "AWSPENDING" ] }]
+    secret = [ { name: "my-secret", secret_string: "value", version_stages: [ "AWSCURRENT", "AWSPENDING" ] } ]
     @cache.set_many(secret)
 
     # Should be retrievable by either stage using hash syntax
@@ -121,7 +121,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
 
     @cache.set_many(secrets)
 
-    result = @cache.get_many(["secret-1", "secret-2"])
+    result = @cache.get_many([ "secret-1", "secret-2" ])
     assert_equal 2, result[:cached].size
   end
 
@@ -133,7 +133,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
 
     @cache.set_many(secrets)
 
-    result = @cache.get_many(["secret-1"])
+    result = @cache.get_many([ "secret-1" ])
     assert_equal 1, result[:cached].size
   end
 
@@ -146,7 +146,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
 
     @cache.clear
 
-    result = @cache.get_many(["secret-1", "secret-2"])
+    result = @cache.get_many([ "secret-1", "secret-2" ])
     assert_empty result[:cached]
     assert_equal [
       { id: "secret-1", version_stage: "AWSCURRENT" },
@@ -158,9 +158,9 @@ class SecretsCacheTest < ActiveSupport::TestCase
     threads = 10.times.map do |i|
       Thread.new do
         100.times do |j|
-          secrets = [{ name: "secret-#{i}-#{j}", secret_string: "value" }]
+          secrets = [ { name: "secret-#{i}-#{j}", secret_string: "value" } ]
           @cache.set_many(secrets)
-          @cache.get_many(["secret-#{i}-#{j}"])
+          @cache.get_many([ "secret-#{i}-#{j}" ])
         end
       end
     end
@@ -168,7 +168,7 @@ class SecretsCacheTest < ActiveSupport::TestCase
     threads.each(&:join)
 
     # Verify some entries are retrievable
-    result = @cache.get_many(["secret-0-0", "secret-9-99"])
+    result = @cache.get_many([ "secret-0-0", "secret-9-99" ])
     assert_equal 2, result[:cached].size
   end
 end

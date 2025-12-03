@@ -95,7 +95,7 @@ class SecretsManagerControllerTest < ActionDispatch::IntegrationTest
       status: 200,
       body: '{"SecretValues": []}',
       headers: { "Content-Type" => "application/x-amz-json-1.1" }
-    ), target: "secretsmanager.BatchGetSecretValue", body: '{}')
+    ), target: "secretsmanager.BatchGetSecretValue", body: "{}")
 
     AwsSecretsManagerForwarder.stub(:new, mock_forwarder) do
       post "/",

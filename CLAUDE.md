@@ -48,9 +48,14 @@ bundle exec falcon serve --bind http://localhost:3050 --threaded --count 1
 # Run tests
 bin/rails test
 
+# Run full CI (tests, rubocop, security audits) - ALWAYS run before completing changes
+bin/ci
+
 # Rails console
 bin/rails console
 ```
+
+**Important**: Always run `bin/ci` before finishing any changes. This runs rubocop style checks, security audits (bundler-audit, brakeman), and the full test suite.
 
 **Important**: Use `--threaded --count 1` for development. Falcon defaults to forked mode with 10 workers, which creates separate processes that don't share the cached AWS SDK client. Single-threaded mode ensures the client is initialized once (~1.4s) and reused for subsequent requests (~3ms).
 
