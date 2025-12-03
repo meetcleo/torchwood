@@ -4,6 +4,11 @@ require "test_helper"
 require "minitest/mock"
 
 class SecretsManagerControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    # Clear cached instances before each test
+    PersistentInstances.clear!
+  end
+
   test "returns error when X-Amz-Target header is missing" do
     post "/",
       params: '{"SecretIdList": ["test"]}',

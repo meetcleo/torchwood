@@ -69,8 +69,8 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
   test "returns cached secrets without calling AWS" do
     # Pre-populate cache
-    cached_secret = { "name" => "cached-secret", "secret_string" => "cached-value" }
-    @cache.set("cached-secret", "AWSCURRENT", cached_secret)
+    cached_secret = { name: "cached-secret", secret_string: "cached-value" }
+    @cache.set_many([cached_secret])
 
     # Create a mock that will fail if called
     mock_client = Minitest::Mock.new
@@ -109,17 +109,17 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
     assert_equal 200, response.status
 
     # Verify secret was cached
-    cached = @cache.get("new-secret")
-    assert_not_nil cached
-    assert_equal "new-secret", cached[:name]
+    result = @cache.get_many(["new-secret"])
+    assert_equal 1, result[:cached].size
+    assert_equal "new-secret", result[:cached][0][:name]
 
     mock_client.verify
   end
 
   test "combines cached and fetched secrets" do
     # Pre-populate cache with one secret
-    cached_secret = { "name" => "cached-secret", "secret_string" => "cached-value" }
-    @cache.set("cached-secret", "AWSCURRENT", cached_secret)
+    cached_secret = { name: "cached-secret", secret_string: "cached-value" }
+    @cache.set_many([cached_secret])
 
     # Mock AWS to return only the uncached secret
     mock_response = mock_aws_response(
@@ -146,8 +146,8 @@ class AwsSecretsManagerForwarderTest < ActiveSupport::TestCase
 
   test "respects VersionStage parameter for cache lookup" do
     # Cache secret for AWSCURRENT
-    current_secret = { "name" => "my-secret", "secret_string" => "current-value" }
-    @cache.set("my-secret", "AWSCURRENT", current_secret)
+    current_secret = { name: "my-secret", secret_string: "current-value" }
+    @cache.set_many([current_secret], "AWSCURRENT")
 
     # Request with AWSPREVIOUS should miss cache and call AWS
     mock_response = mock_aws_response(

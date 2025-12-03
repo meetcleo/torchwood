@@ -41,9 +41,10 @@ class SecretsManagerController < ApplicationController
   private
 
   # Returns the forwarder service instance.
+  # Uses a persistent instance to avoid expensive AWS SDK client initialization on each request.
   #
   # @return [AwsSecretsManagerForwarder] the forwarder service
   def forwarder
-    @forwarder ||= AwsSecretsManagerForwarder.new
+    PersistentInstances.secrets_manager_forwarder
   end
 end

@@ -42,8 +42,8 @@ results = threads.map(&:value)
 ## Common Commands
 
 ```bash
-# Start the server
-bundle exec falcon serve --bind http://localhost:3050
+# Start the server (single-threaded for in-memory caching)
+bundle exec falcon serve --bind http://localhost:3050 --threaded --count 1
 
 # Run tests
 bin/rails test
@@ -51,6 +51,8 @@ bin/rails test
 # Rails console
 bin/rails console
 ```
+
+**Important**: Use `--threaded --count 1` for development. Falcon defaults to forked mode with 10 workers, which creates separate processes that don't share the cached AWS SDK client. Single-threaded mode ensures the client is initialized once (~1.4s) and reused for subsequent requests (~3ms).
 
 ## Architecture
 
@@ -67,17 +69,17 @@ The API follows AWS Secrets Manager conventions:
 
 - `app/controllers/secrets_manager_controller.rb` - Main API controller
 - `app/services/aws_secrets_manager_forwarder.rb` - Forwards requests to AWS Secrets Manager (with caching)
-- `app/services/secrets_cache.rb` - Thread-safe in-memory cache for secrets
+- `app/services/secrets_cache.rb` - Cache wrapper around Rails.cache for secrets
+- `config/initializers/secrets_cache_store.rb` - `PersistentInstances` module for cached AWS SDK client
 - `config/routes.rb` - Route definitions
 
 ### Caching Strategy
 
-The forwarder implements an in-memory caching layer:
-- Secrets are cached by ID/ARN and version stage (default: AWSCURRENT)
-- Cache is checked before making AWS requests
-- Fetched secrets are automatically cached
-- Large requests (>20 secrets) are split into concurrent fiber-based batches per AWS limits
-- Cache writes are synchronized with a Mutex; reads are lock-free for performance
+The forwarder implements a caching layer with two levels:
+
+1. **AWS SDK Client**: The `AwsSecretsManagerForwarder` is cached in `PersistentInstances` to avoid expensive client initialization (~1.4s) on each request.
+
+2. **Secrets Cache**: Uses `Rails.cache` with a "secrets:" namespace. Secrets are cached by ID/ARN and version stage (default: AWSCURRENT). Large requests (>20 secrets) are split into concurrent fiber-based batches per AWS limits.
 
 ## Implemented Operations
 
