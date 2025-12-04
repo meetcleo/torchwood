@@ -18,7 +18,7 @@ service hostname do
   preload "preload.rb"
 
   # The default port should be 3000, but you can change it to match your Heroku configuration.
-  port {ENV.fetch("PORT", 3000).to_i}
+  port { ENV.fetch("PORT", 3000).to_i }
 
   endpoint do
     Async::HTTP::Endpoint
